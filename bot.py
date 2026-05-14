@@ -12,7 +12,7 @@ TOKEN = "f9LHodD0cOIloCdM4S4u2QEo0hF1yDOLdVH23RWt5jZwWyIWM82UMhtRYvdd5vPJJ4jYfNE
 
 API_URL = "https://platform-api.max.ru"
 
-ADMIN_USER_ID = "10878339"
+ADMIN_CHAT_ID = "413483728"
 
 EXCEL_FILE = "orders.xlsx"
 
@@ -33,9 +33,8 @@ def create_excel():
 
         ws.append([
             "Дата",
-            "User ID",
+            "Chat ID",
             "Имя",
-            "Телефон",
             "Заказ"
         ])
 
@@ -45,16 +44,15 @@ def create_excel():
 # СОХРАНЕНИЕ ЗАКАЗА
 # =========================================
 
-def save_order(user_id, name, phone, order_text):
+def save_order(chat_id, name, order_text):
 
     wb = load_workbook(EXCEL_FILE)
     ws = wb.active
 
     ws.append([
         datetime.now().strftime("%d.%m.%Y %H:%M"),
-        user_id,
+        chat_id,
         name,
-        phone,
         order_text
     ])
 
@@ -64,22 +62,18 @@ def save_order(user_id, name, phone, order_text):
 # ОТПРАВКА СООБЩЕНИЯ
 # =========================================
 
-def send_message(user_id, text):
+def send_message(chat_id, text):
 
     url = f"{API_URL}/messages"
 
     headers = {
-        "Authorization": TOKEN,
+        "Authorization": f"Bearer {TOKEN}",
         "Content-Type": "application/json"
     }
 
     data = {
-        "recipient": {
-            "user_id": user_id
-        },
-        "message": {
-            "text": text
-        }
+        "chat_id": int(chat_id),
+        "text": text
     }
 
     response = requests.post(
@@ -116,13 +110,15 @@ def webhook():
 
     sender = message.get("sender", {})
 
+    recipient = message.get("recipient", {})
+
+    chat_id = recipient.get("chat_id")
+
     text = body.get("text", "")
 
     user_name = sender.get("first_name", "Пользователь")
 
-    user_id = sender.get("user_id")
-
-    print("USER ID:", user_id)
+    print("CHAT ID:", chat_id)
     print("TEXT:", text)
 
     # =====================================
@@ -143,7 +139,7 @@ def webhook():
 /help — помощь
 """
 
-        send_message(user_id, answer)
+        send_message(chat_id, answer)
 
     # =====================================
     # /help
@@ -152,7 +148,7 @@ def webhook():
     elif text == "/help":
 
         send_message(
-            user_id,
+            chat_id,
             "Напишите:\n/order ваш заказ"
         )
 
@@ -167,38 +163,34 @@ def webhook():
         if order_text == "":
 
             send_message(
-                user_id,
+                chat_id,
                 "Пример:\n/order Хочу заказать баннер"
             )
 
         else:
 
             save_order(
-                user_id,
+                chat_id,
                 user_name,
-                "Не указан",
                 order_text
             )
 
             send_message(
-                user_id,
+                chat_id,
                 f"✅ Заказ принят:\n{order_text}"
             )
 
             # уведомление админу
-            if ADMIN_USER_ID != "":
-
-                send_message(
-                    ADMIN_USER_ID,
-                    f"""
+            send_message(
+                ADMIN_CHAT_ID,
+                f"""
 🆕 Новый заказ
 
 👤 {user_name}
-🆔 {user_id}
 
 💬 {order_text}
 """
-                )
+            )
 
     # =====================================
     # НЕИЗВЕСТНАЯ КОМАНДА
@@ -207,7 +199,7 @@ def webhook():
     else:
 
         send_message(
-            user_id,
+            chat_id,
             "Неизвестная команда.\nНапишите /help"
         )
 
