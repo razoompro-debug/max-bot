@@ -1,18 +1,8 @@
-import asyncio
 import os
 from datetime import datetime
 
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
-from aiogram.types import (
-    Message,
-    CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton
-)
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.storage.memory import MemoryStorage
+from flask import Flask, request, jsonify
+import requests
 
 from openpyxl import Workbook, load_workbook
 
@@ -20,10 +10,15 @@ from openpyxl import Workbook, load_workbook
 # НАСТРОЙКИ
 # =========================================
 
-TOKEN = "8873197701:AAEgP61xiVJfepjsYUDSr6VAtynKRAU9Eqo"
-ADMIN_ID = 816279118
+TOKEN = os.getenv("TOKEN")
+
+API_URL = "https://platform-api.max.ru"
+
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
 
 EXCEL_FILE = "orders.xlsx"
+
+app = Flask(__name__)
 
 # =========================================
 # EXCEL
@@ -66,415 +61,406 @@ def save_order(data):
 
     ws.append([
         datetime.now().strftime("%Y-%m-%d %H:%M"),
-        data["gender"],
-        data["format_size"],
-        data["tshirt_color"],
-        data["text"],
-        data["text_color"],
-        data["text_size"],
-        data["name"],
-        data["phone"],
-        data["address"]
+        data.get("gender"),
+        data.get("size"),
+        data.get("tshirt_color"),
+        data.get("text"),
+        data.get("text_color"),
+        data.get("text_size"),
+        data.get("name"),
+        data.get("phone"),
+        data.get("address")
     ])
 
     wb.save(EXCEL_FILE)
 
 # =========================================
-# FSM
+# ПАМЯТЬ ПОЛЬЗОВАТЕЛЕЙ
 # =========================================
 
-class OrderState(StatesGroup):
-
-    gender = State()
-    format_size = State()
-    tshirt_color = State()
-    text = State()
-    text_color = State()
-    text_size = State()
-    name = State()
-    phone = State()
-    address = State()
+users = {}
 
 # =========================================
-# BOT
+# ОТПРАВКА СООБЩЕНИЯ
 # =========================================
 
-bot = Bot(token=TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+def send_message(chat_id, text):
 
-# =========================================
-# КНОПКИ
-# =========================================
+    url = f"{API_URL}/messages"
 
-def gender_kb():
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="👔 Мужская",
-                    callback_data="male"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👚 Женская",
-                    callback_data="female"
-                )
-            ]
-        ]
-    )
-
-def size_kb():
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📏 MINI",
-                    callback_data="mini"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📏 MAXI",
-                    callback_data="maxi"
-                )
-            ]
-        ]
-    )
-
-def tshirt_color_kb():
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="⚪ Белый",
-                    callback_data="white"
-                ),
-                InlineKeyboardButton(
-                    text="⚫ Чёрный",
-                    callback_data="black"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔴 Красный",
-                    callback_data="red"
-                ),
-                InlineKeyboardButton(
-                    text="🔵 Синий",
-                    callback_data="blue"
-                )
-            ]
-        ]
-    )
-
-def text_color_kb():
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="⚪ Белый",
-                    callback_data="white_text"
-                ),
-                InlineKeyboardButton(
-                    text="⚫ Чёрный",
-                    callback_data="black_text"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔴 Красный",
-                    callback_data="red_text"
-                ),
-                InlineKeyboardButton(
-                    text="🟡 Золотой",
-                    callback_data="gold_text"
-                )
-            ]
-        ]
-    )
-
-def text_size_kb():
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🔹 Маленькая",
-                    callback_data="small"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔸 Средняя",
-                    callback_data="medium"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⭐ Большая",
-                    callback_data="large"
-                )
-            ]
-        ]
-    )
-
-# =========================================
-# START
-# =========================================
-
-@dp.message(CommandStart())
-async def start(message: Message, state: FSMContext):
-
-    await state.clear()
-
-    await message.answer(
-        "👕 <b>Именные футболки</b>\n\n"
-        "Создайте уникальную футболку всего за пару минут ✨\n\n"
-        "👇 Выберите модель:",
-        parse_mode="HTML",
-        reply_markup=gender_kb()
-    )
-
-    await state.set_state(OrderState.gender)
-
-# =========================================
-# ВЫБОР МОДЕЛИ
-# =========================================
-
-@dp.callback_query(OrderState.gender)
-async def choose_gender(callback: CallbackQuery, state: FSMContext):
-
-    gender = "Мужская 👔" \
-        if callback.data == "male" \
-        else "Женская 👚"
-
-    await state.update_data(gender=gender)
-
-    await callback.message.edit_text(
-        "📏 Выберите размер футболки:",
-        reply_markup=size_kb()
-    )
-
-    await state.set_state(OrderState.format_size)
-
-    await callback.answer()
-
-# =========================================
-# РАЗМЕР
-# =========================================
-
-@dp.callback_query(OrderState.format_size)
-async def choose_size(callback: CallbackQuery, state: FSMContext):
-
-    size = "MINI" if callback.data == "mini" else "MAXI"
-
-    await state.update_data(format_size=size)
-
-    await callback.message.edit_text(
-        "🎨 Выберите цвет футболки:",
-        reply_markup=tshirt_color_kb()
-    )
-
-    await state.set_state(OrderState.tshirt_color)
-
-    await callback.answer()
-
-# =========================================
-# ЦВЕТ ФУТБОЛКИ
-# =========================================
-
-@dp.callback_query(OrderState.tshirt_color)
-async def choose_tshirt_color(
-    callback: CallbackQuery,
-    state: FSMContext
-):
-
-    colors = {
-        "white": "Белый",
-        "black": "Чёрный",
-        "red": "Красный",
-        "blue": "Синий"
+    headers = {
+        "Authorization": TOKEN,
+        "Content-Type": "application/json"
     }
 
-    await state.update_data(
-        tshirt_color=colors[callback.data]
-    )
-
-    await callback.message.edit_text(
-        "✍️ Введите текст надписи:"
-    )
-
-    await state.set_state(OrderState.text)
-
-    await callback.answer()
-
-# =========================================
-# ТЕКСТ
-# =========================================
-
-@dp.message(OrderState.text)
-async def get_text(message: Message, state: FSMContext):
-
-    await state.update_data(text=message.text)
-
-    await message.answer(
-        "🎨 Выберите цвет надписи:",
-        reply_markup=text_color_kb()
-    )
-
-    await state.set_state(OrderState.text_color)
-
-# =========================================
-# ЦВЕТ НАДПИСИ
-# =========================================
-
-@dp.callback_query(OrderState.text_color)
-async def choose_text_color(
-    callback: CallbackQuery,
-    state: FSMContext
-):
-
-    colors = {
-        "white_text": "Белый",
-        "black_text": "Чёрный",
-        "red_text": "Красный",
-        "gold_text": "Золотой"
+    payload = {
+        "chatId": chat_id,
+        "text": text
     }
 
-    await state.update_data(
-        text_color=colors[callback.data]
+    response = requests.post(
+        url,
+        headers=headers,
+        json=payload
     )
 
-    await callback.message.edit_text(
-        "📏 Выберите размер надписи:",
-        reply_markup=text_size_kb()
-    )
-
-    await state.set_state(OrderState.text_size)
-
-    await callback.answer()
+    print(response.text)
 
 # =========================================
-# РАЗМЕР НАДПИСИ
+# WEBHOOK
 # =========================================
 
-@dp.callback_query(OrderState.text_size)
-async def choose_text_size(
-    callback: CallbackQuery,
-    state: FSMContext
-):
+@app.route("/webhook", methods=["POST"])
+def webhook():
 
-    sizes = {
-        "small": "Маленькая",
-        "medium": "Средняя",
-        "large": "Большая"
-    }
+    data = request.json
 
-    await state.update_data(
-        text_size=sizes[callback.data]
-    )
+    print(data)
 
-    await callback.message.edit_text(
-        "👤 Введите ФИО:"
-    )
+    try:
 
-    await state.set_state(OrderState.name)
+        message = data.get("message")
 
-    await callback.answer()
+        if not message:
+            return jsonify({"ok": True})
 
-# =========================================
-# ФИО
-# =========================================
+        chat_id = message["chat"]["chatId"]
 
-@dp.message(OrderState.name)
-async def get_name(message: Message, state: FSMContext):
+        user_id = str(message["from"]["userId"])
 
-    await state.update_data(name=message.text)
+        text = message.get("text", "")
 
-    await message.answer(
-        "📱 Введите номер телефона:"
-    )
+        # =====================================
+        # START
+        # =====================================
 
-    await state.set_state(OrderState.phone)
+        if text == "/start":
 
-# =========================================
-# ТЕЛЕФОН
-# =========================================
+            users[user_id] = {
+                "step": "gender"
+            }
 
-@dp.message(OrderState.phone)
-async def get_phone(message: Message, state: FSMContext):
+            send_message(
+                chat_id,
+                "👕 Именные футболки\n\n"
+                "Выберите модель:\n\n"
+                "1 - Мужская\n"
+                "2 - Женская"
+            )
 
-    await state.update_data(phone=message.text)
+            return jsonify({"ok": True})
 
-    await message.answer(
-        "🏠 Введите адрес доставки:"
-    )
+        # =====================================
+        # ПРОВЕРКА
+        # =====================================
 
-    await state.set_state(OrderState.address)
+        if user_id not in users:
 
-# =========================================
-# АДРЕС
-# =========================================
+            send_message(
+                chat_id,
+                "Напишите /start"
+            )
 
-@dp.message(OrderState.address)
-async def get_address(message: Message, state: FSMContext):
+            return jsonify({"ok": True})
 
-    await state.update_data(address=message.text)
+        user = users[user_id]
 
-    data = await state.get_data()
+        step = user["step"]
 
-    # СОХРАНЕНИЕ
-    save_order(data)
+        # =====================================
+        # МОДЕЛЬ
+        # =====================================
 
-    # СООБЩЕНИЕ АДМИНУ
-    order_text = f"""
-✅ <b>НОВЫЙ ЗАКАЗ</b>
+        if step == "gender":
 
-👔 Модель: {data['gender']}
-📏 Размер: {data['format_size']}
+            if text == "1":
+                user["gender"] = "Мужская"
 
-🎨 Цвет футболки: {data['tshirt_color']}
+            elif text == "2":
+                user["gender"] = "Женская"
 
-✍️ Надпись: {data['text']}
-🎨 Цвет надписи: {data['text_color']}
-📏 Размер надписи: {data['text_size']}
+            else:
 
-👤 ФИО: {data['name']}
-📱 Телефон: {data['phone']}
-🏠 Адрес: {data['address']}
+                send_message(
+                    chat_id,
+                    "Введите 1 или 2"
+                )
+
+                return jsonify({"ok": True})
+
+            user["step"] = "size"
+
+            send_message(
+                chat_id,
+                "📏 Размер:\n\n"
+                "1 - MINI\n"
+                "2 - MAXI"
+            )
+
+            return jsonify({"ok": True})
+
+        # =====================================
+        # РАЗМЕР
+        # =====================================
+
+        if step == "size":
+
+            if text == "1":
+                user["size"] = "MINI"
+
+            elif text == "2":
+                user["size"] = "MAXI"
+
+            else:
+
+                send_message(
+                    chat_id,
+                    "Введите 1 или 2"
+                )
+
+                return jsonify({"ok": True})
+
+            user["step"] = "tshirt_color"
+
+            send_message(
+                chat_id,
+                "🎨 Цвет футболки:\n\n"
+                "1 - Белый\n"
+                "2 - Чёрный\n"
+                "3 - Красный\n"
+                "4 - Синий"
+            )
+
+            return jsonify({"ok": True})
+
+        # =====================================
+        # ЦВЕТ ФУТБОЛКИ
+        # =====================================
+
+        if step == "tshirt_color":
+
+            colors = {
+                "1": "Белый",
+                "2": "Чёрный",
+                "3": "Красный",
+                "4": "Синий"
+            }
+
+            if text not in colors:
+
+                send_message(
+                    chat_id,
+                    "Введите число от 1 до 4"
+                )
+
+                return jsonify({"ok": True})
+
+            user["tshirt_color"] = colors[text]
+
+            user["step"] = "text"
+
+            send_message(
+                chat_id,
+                "✍️ Введите текст надписи:"
+            )
+
+            return jsonify({"ok": True})
+
+        # =====================================
+        # ТЕКСТ
+        # =====================================
+
+        if step == "text":
+
+            user["text"] = text
+
+            user["step"] = "text_color"
+
+            send_message(
+                chat_id,
+                "🎨 Цвет надписи:\n\n"
+                "1 - Белый\n"
+                "2 - Чёрный\n"
+                "3 - Красный\n"
+                "4 - Золотой"
+            )
+
+            return jsonify({"ok": True})
+
+        # =====================================
+        # ЦВЕТ НАДПИСИ
+        # =====================================
+
+        if step == "text_color":
+
+            colors = {
+                "1": "Белый",
+                "2": "Чёрный",
+                "3": "Красный",
+                "4": "Золотой"
+            }
+
+            if text not in colors:
+
+                send_message(
+                    chat_id,
+                    "Введите число от 1 до 4"
+                )
+
+                return jsonify({"ok": True})
+
+            user["text_color"] = colors[text]
+
+            user["step"] = "text_size"
+
+            send_message(
+                chat_id,
+                "📏 Размер надписи:\n\n"
+                "1 - Маленькая\n"
+                "2 - Средняя\n"
+                "3 - Большая"
+            )
+
+            return jsonify({"ok": True})
+
+        # =====================================
+        # РАЗМЕР НАДПИСИ
+        # =====================================
+
+        if step == "text_size":
+
+            sizes = {
+                "1": "Маленькая",
+                "2": "Средняя",
+                "3": "Большая"
+            }
+
+            if text not in sizes:
+
+                send_message(
+                    chat_id,
+                    "Введите число от 1 до 3"
+                )
+
+                return jsonify({"ok": True})
+
+                user["text_size"] = sizes[text]
+
+            user["text_size"] = sizes[text]
+
+            user["step"] = "name"
+
+            send_message(
+                chat_id,
+                "👤 Введите ФИО:"
+            )
+
+            return jsonify({"ok": True})
+
+        # =====================================
+        # ФИО
+        # =====================================
+
+        if step == "name":
+
+            user["name"] = text
+
+            user["step"] = "phone"
+
+            send_message(
+                chat_id,
+                "📱 Введите номер телефона:"
+            )
+
+            return jsonify({"ok": True})
+
+        # =====================================
+        # ТЕЛЕФОН
+        # =====================================
+
+        if step == "phone":
+
+            user["phone"] = text
+
+            user["step"] = "address"
+
+            send_message(
+                chat_id,
+                "🏠 Введите адрес доставки:"
+            )
+
+            return jsonify({"ok": True})
+
+        # =====================================
+        # АДРЕС
+        # =====================================
+
+        if step == "address":
+
+            user["address"] = text
+
+            save_order(user)
+
+            order_text = f"""
+НОВЫЙ ЗАКАЗ
+
+👔 Модель: {user['gender']}
+📏 Размер: {user['size']}
+
+🎨 Цвет футболки: {user['tshirt_color']}
+
+✍️ Надпись: {user['text']}
+🎨 Цвет надписи: {user['text_color']}
+📏 Размер надписи: {user['text_size']}
+
+👤 ФИО: {user['name']}
+📱 Телефон: {user['phone']}
+🏠 Адрес: {user['address']}
 """
 
-    # КЛИЕНТУ
-    await message.answer(
-        "✅ <b>Спасибо за заказ!</b>\n\n"
-        "Наш менеджер скоро свяжется с Вами ✨",
-        parse_mode="HTML"
-    )
+            # КЛИЕНТУ
 
-    # АДМИНУ
-    await bot.send_message(
-        ADMIN_ID,
-        order_text,
-        parse_mode="HTML"
-    )
+            send_message(
+                chat_id,
+                "✅ Спасибо за заказ!\n\n"
+                "Наш менеджер скоро свяжется с вами ✨"
+            )
 
-    await state.clear()
+            # АДМИНУ
+
+            if ADMIN_CHAT_ID:
+
+                send_message(
+                    ADMIN_CHAT_ID,
+                    order_text
+                )
+
+            del users[user_id]
+
+            return jsonify({"ok": True})
+
+    except Exception as e:
+
+        print("ERROR:", e)
+
+    return jsonify({"ok": True})
+
+# =========================================
+# ГЛАВНАЯ
+# =========================================
+
+@app.route("/")
+def home():
+
+    return "MAX BOT WORKING"
 
 # =========================================
 # ЗАПУСК
 # =========================================
 
-async def main():
-
-    print("BOT STARTED")
-
-    await dp.start_polling(bot)
-
 if __name__ == "__main__":
 
-    asyncio.run(main())
+    app.run(
+        host="0.0.0.0",
+        port=10000
+    )
