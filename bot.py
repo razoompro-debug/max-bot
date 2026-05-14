@@ -10,7 +10,7 @@ from openpyxl import Workbook, load_workbook
 # НАСТРОЙКИ
 # =========================================
 
-TOKEN = os.getenv("TOKEN")
+TOKEN = "f9LHodD0cOJmCYW9DutFVo0epU2vwCwD0su7gmhyLdUR1ZJ2zOx6yEVlyyUjQ5l0oWxMPNllo1sujLw218Vy"
 
 API_URL = "https://platform-api.max.ru"
 
