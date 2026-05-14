@@ -1,27 +1,24 @@
-import os
-from datetime import datetime
-
 from flask import Flask, request, jsonify
 import requests
-
+import os
 from openpyxl import Workbook, load_workbook
 
 # =========================================
 # НАСТРОЙКИ
 # =========================================
 
-TOKEN = "f9LHodD0cOJmCYW9DutFVo0epU2vwCwD0su7gmhyLdUR1ZJ2zOx6yEVlyyUjQ5l0oWxMPNllo1sujLw218Vy"
+TOKEN = "f9LHodD0cOIloCdM4S4u2QEo0hF1yDOLdVH23RWt5jZwWyIWM82UMhtRYvdd5vPJJ4jYfNEjdPrbnSAV4siW"
 
 API_URL = "https://platform-api.max.ru"
 
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
+ADMIN_CHAT_ID = ""
 
 EXCEL_FILE = "orders.xlsx"
 
 app = Flask(__name__)
 
 # =========================================
-# EXCEL
+# СОЗДАНИЕ EXCEL
 # =========================================
 
 def create_excel():
@@ -35,50 +32,34 @@ def create_excel():
 
         ws.append([
             "Дата",
-            "Модель",
-            "Размер",
-            "Цвет футболки",
-            "Надпись",
-            "Цвет надписи",
-            "Размер надписи",
-            "ФИО",
+            "Chat ID",
+            "Имя",
             "Телефон",
-            "Адрес"
+            "Заказ"
         ])
 
         wb.save(EXCEL_FILE)
-
-create_excel()
 
 # =========================================
 # СОХРАНЕНИЕ ЗАКАЗА
 # =========================================
 
-def save_order(data):
+def save_order(chat_id, name, phone, order_text):
 
     wb = load_workbook(EXCEL_FILE)
     ws = wb.active
 
+    from datetime import datetime
+
     ws.append([
-        datetime.now().strftime("%Y-%m-%d %H:%M"),
-        data.get("gender"),
-        data.get("size"),
-        data.get("tshirt_color"),
-        data.get("text"),
-        data.get("text_color"),
-        data.get("text_size"),
-        data.get("name"),
-        data.get("phone"),
-        data.get("address")
+        datetime.now().strftime("%d.%m.%Y %H:%M"),
+        chat_id,
+        name,
+        phone,
+        order_text
     ])
 
     wb.save(EXCEL_FILE)
-
-# =========================================
-# ПАМЯТЬ ПОЛЬЗОВАТЕЛЕЙ
-# =========================================
-
-users = {}
 
 # =========================================
 # ОТПРАВКА СООБЩЕНИЯ
@@ -89,11 +70,11 @@ def send_message(chat_id, text):
     url = f"{API_URL}/messages"
 
     headers = {
-        "Authorization": f"Bearer {TOKEN}",
+        "Authorization": TOKEN,
         "Content-Type": "application/json"
     }
 
-    payload = {
+    data = {
         "chat_id": chat_id,
         "text": text
     }
@@ -101,11 +82,19 @@ def send_message(chat_id, text):
     response = requests.post(
         url,
         headers=headers,
-        json=payload
+        json=data
     )
 
-    print("SEND MESSAGE:", response.status_code)
-    print(response.text)
+    print("SEND MESSAGE STATUS:", response.status_code)
+    print("SEND MESSAGE RESPONSE:", response.text)
+
+# =========================================
+# ГЛАВНАЯ СТРАНИЦА
+# =========================================
+
+@app.route("/")
+def home():
+    return "MAX BOT WORKING"
 
 # =========================================
 # WEBHOOK
@@ -118,355 +107,121 @@ def webhook():
 
     print("WEBHOOK DATA:", data)
 
-    try:
+    message = data.get("message", {})
 
-        message = data.get("message", {})
+    body = message.get("body", {})
 
-        if not message:
-            return jsonify({"ok": True})
+    sender = message.get("sender", {})
 
-        chat_id = message.get("recipient", {}).get("chat_id")
+    recipient = message.get("recipient", {})
 
-        user_id = str(
-            message.get("sender", {}).get("user_id")
-        )
+    chat_id = recipient.get("chat_id")
 
-        text = message.get("body", {}).get("text", "")
+    text = body.get("text", "")
 
-        if not chat_id:
-            return jsonify({"ok": True})
+    user_name = sender.get("first_name", "Пользователь")
 
-        print("CHAT ID:", chat_id)
-        print("USER ID:", user_id)
-        print("TEXT:", text)
+    user_id = sender.get("user_id")
 
-        # =====================================
-        # START
-        # =====================================
+    print("CHAT ID:", chat_id)
+    print("USER ID:", user_id)
+    print("TEXT:", text)
 
-        if text == "/start":
+    # =====================================
+    # КОМАНДА START
+    # =====================================
 
-            users[user_id] = {
-                "step": "gender"
-            }
+    if text == "/start":
 
-            send_message(
-                chat_id,
-                "👕 Именные футболки\n\n"
-                "Выберите модель:\n\n"
-                "1 - Мужская\n"
-                "2 - Женская"
-            )
+        answer = f"""
+Здравствуйте, {user_name}! 👋
 
-            return jsonify({"ok": True})
+Добро пожаловать в бот заказов.
 
-        # =====================================
-        # ПРОВЕРКА
-        # =====================================
+Доступные команды:
 
-        if user_id not in users:
-
-            send_message(
-                chat_id,
-                "Напишите /start"
-            )
-
-            return jsonify({"ok": True})
-
-        user = users[user_id]
-
-        step = user["step"]
-
-        # =====================================
-        # МОДЕЛЬ
-        # =====================================
-
-        if step == "gender":
-
-            if text == "1":
-                user["gender"] = "Мужская"
-
-            elif text == "2":
-                user["gender"] = "Женская"
-
-            else:
-
-                send_message(
-                    chat_id,
-                    "Введите 1 или 2"
-                )
-
-                return jsonify({"ok": True})
-
-            user["step"] = "size"
-
-            send_message(
-                chat_id,
-                "📏 Размер:\n\n"
-                "1 - MINI\n"
-                "2 - MAXI"
-            )
-
-            return jsonify({"ok": True})
-
-        # =====================================
-        # РАЗМЕР
-        # =====================================
-
-        if step == "size":
-
-            if text == "1":
-                user["size"] = "MINI"
-
-            elif text == "2":
-                user["size"] = "MAXI"
-
-            else:
-
-                send_message(
-                    chat_id,
-                    "Введите 1 или 2"
-                )
-
-                return jsonify({"ok": True})
-
-            user["step"] = "tshirt_color"
-
-            send_message(
-                chat_id,
-                "🎨 Цвет футболки:\n\n"
-                "1 - Белый\n"
-                "2 - Чёрный\n"
-                "3 - Красный\n"
-                "4 - Синий"
-            )
-
-            return jsonify({"ok": True})
-
-        # =====================================
-        # ЦВЕТ ФУТБОЛКИ
-        # =====================================
-
-        if step == "tshirt_color":
-
-            colors = {
-                "1": "Белый",
-                "2": "Чёрный",
-                "3": "Красный",
-                "4": "Синий"
-            }
-
-            if text not in colors:
-
-                send_message(
-                    chat_id,
-                    "Введите число от 1 до 4"
-                )
-
-                return jsonify({"ok": True})
-
-            user["tshirt_color"] = colors[text]
-
-            user["step"] = "text"
-
-            send_message(
-                chat_id,
-                "✍️ Введите текст надписи:"
-            )
-
-            return jsonify({"ok": True})
-
-        # =====================================
-        # ТЕКСТ
-        # =====================================
-
-        if step == "text":
-
-            user["text"] = text
-
-            user["step"] = "text_color"
-
-            send_message(
-                chat_id,
-                "🎨 Цвет надписи:\n\n"
-                "1 - Белый\n"
-                "2 - Чёрный\n"
-                "3 - Красный\n"
-                "4 - Золотой"
-            )
-
-            return jsonify({"ok": True})
-
-        # =====================================
-        # ЦВЕТ НАДПИСИ
-        # =====================================
-
-        if step == "text_color":
-
-            colors = {
-                "1": "Белый",
-                "2": "Чёрный",
-                "3": "Красный",
-                "4": "Золотой"
-            }
-
-            if text not in colors:
-
-                send_message(
-                    chat_id,
-                    "Введите число от 1 до 4"
-                )
-
-                return jsonify({"ok": True})
-
-            user["text_color"] = colors[text]
-
-            user["step"] = "text_size"
-
-            send_message(
-                chat_id,
-                "📏 Размер надписи:\n\n"
-                "1 - Маленькая\n"
-                "2 - Средняя\n"
-                "3 - Большая"
-            )
-
-            return jsonify({"ok": True})
-
-        # =====================================
-        # РАЗМЕР НАДПИСИ
-        # =====================================
-
-        if step == "text_size":
-
-            sizes = {
-                "1": "Маленькая",
-                "2": "Средняя",
-                "3": "Большая"
-            }
-
-            if text not in sizes:
-
-                send_message(
-                    chat_id,
-                    "Введите число от 1 до 3"
-                )
-
-                return jsonify({"ok": True})
-
-            user["text_size"] = sizes[text]
-
-            user["step"] = "name"
-
-            send_message(
-                chat_id,
-                "👤 Введите ФИО:"
-            )
-
-            return jsonify({"ok": True})
-
-        # =====================================
-        # ФИО
-        # =====================================
-
-        if step == "name":
-
-            user["name"] = text
-
-            user["step"] = "phone"
-
-            send_message(
-                chat_id,
-                "📱 Введите номер телефона:"
-            )
-
-            return jsonify({"ok": True})
-
-        # =====================================
-        # ТЕЛЕФОН
-        # =====================================
-
-        if step == "phone":
-
-            user["phone"] = text
-
-            user["step"] = "address"
-
-            send_message(
-                chat_id,
-                "🏠 Введите адрес доставки:"
-            )
-
-            return jsonify({"ok": True})
-
-        # =====================================
-        # АДРЕС
-        # =====================================
-
-        if step == "address":
-
-            user["address"] = text
-
-            save_order(user)
-
-            order_text = f"""
-НОВЫЙ ЗАКАЗ
-
-👔 Модель: {user['gender']}
-📏 Размер: {user['size']}
-
-🎨 Цвет футболки: {user['tshirt_color']}
-
-✍️ Надпись: {user['text']}
-🎨 Цвет надписи: {user['text_color']}
-📏 Размер надписи: {user['text_size']}
-
-👤 ФИО: {user['name']}
-📱 Телефон: {user['phone']}
-🏠 Адрес: {user['address']}
+/start — запуск
+/order — оформить заказ
+/help — помощь
 """
 
-            # КЛИЕНТУ
+        send_message(chat_id, answer)
+
+    # =====================================
+    # ПОМОЩЬ
+    # =====================================
+
+    elif text == "/help":
+
+        send_message(
+            chat_id,
+            "Напишите /order чтобы оформить заказ."
+        )
+
+    # =====================================
+    # ЗАКАЗ
+    # =====================================
+
+    elif text.startswith("/order"):
+
+        order_text = text.replace("/order", "").strip()
+
+        if order_text == "":
 
             send_message(
                 chat_id,
-                "✅ Спасибо за заказ!\n\n"
-                "Наш менеджер скоро свяжется с вами ✨"
+                "Пример:\n/order Хочу заказать баннер"
             )
 
-            # АДМИНУ
+        else:
 
-            if ADMIN_CHAT_ID:
+            save_order(
+                chat_id,
+                user_name,
+                "Не указан",
+                order_text
+            )
+
+            send_message(
+                chat_id,
+                f"✅ Заказ принят:\n{order_text}"
+            )
+
+            if ADMIN_CHAT_ID != "":
 
                 send_message(
                     ADMIN_CHAT_ID,
-                    order_text
+                    f"""
+🆕 Новый заказ
+
+👤 {user_name}
+🆔 {user_id}
+💬 {order_text}
+"""
                 )
 
-            del users[user_id]
+    # =====================================
+    # НЕИЗВЕСТНАЯ КОМАНДА
+    # =====================================
 
-            return jsonify({"ok": True})
+    else:
 
-    except Exception as e:
+        send_message(
+            chat_id,
+            "Неизвестная команда.\nНапишите /help"
+        )
 
-        print("ERROR:", e)
-
-    return jsonify({"ok": True})
-
-# =========================================
-# ГЛАВНАЯ
-# =========================================
-
-@app.route("/")
-def home():
-
-    return "MAX BOT WORKING"
+    return jsonify({
+        "status": "ok"
+    })
 
 # =========================================
 # ЗАПУСК
 # =========================================
 
 if __name__ == "__main__":
+
+    create_excel()
 
     app.run(
         host="0.0.0.0",
