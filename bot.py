@@ -89,12 +89,12 @@ def send_message(chat_id, text):
     url = f"{API_URL}/messages"
 
     headers = {
-        "Authorization": TOKEN,
+        "Authorization": f"Bearer {TOKEN}",
         "Content-Type": "application/json"
     }
 
     payload = {
-        "chatId": chat_id,
+        "chat_id": chat_id,
         "text": text
     }
 
@@ -104,6 +104,7 @@ def send_message(chat_id, text):
         json=payload
     )
 
+    print("SEND MESSAGE:", response.status_code)
     print(response.text)
 
 # =========================================
@@ -115,20 +116,29 @@ def webhook():
 
     data = request.json
 
-    print(data)
+    print("WEBHOOK DATA:", data)
 
     try:
 
-        message = data.get("message")
+        message = data.get("message", {})
 
         if not message:
             return jsonify({"ok": True})
 
-        chat_id = message["chat"]["chatId"]
+        chat_id = message.get("recipient", {}).get("chat_id")
 
-        user_id = str(message["from"]["userId"])
+        user_id = str(
+            message.get("sender", {}).get("user_id")
+        )
 
-        text = message.get("text", "")
+        text = message.get("body", {}).get("text", "")
+
+        if not chat_id:
+            return jsonify({"ok": True})
+
+        print("CHAT ID:", chat_id)
+        print("USER ID:", user_id)
+        print("TEXT:", text)
 
         # =====================================
         # START
@@ -343,8 +353,6 @@ def webhook():
                 )
 
                 return jsonify({"ok": True})
-
-                user["text_size"] = sizes[text]
 
             user["text_size"] = sizes[text]
 
