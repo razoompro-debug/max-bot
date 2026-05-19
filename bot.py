@@ -10,16 +10,19 @@ from datetime import datetime
 # НАСТРОЙКИ
 # ==================================================
 
+# ТОКЕН MAX BOT
 TOKEN = "f9LHodD0cOIloCdM4S4u2QEo0hF1yDOLdVH23RWt5jZwWyIWM82UMhtRYvdd5vPJJ4jYfNEjdPrbnSAV4siW"
 
+# API MAX
 API_URL = "https://platform-api.max.ru"
 
-# ID администратора
-ADMIN_CHAT_ID = 413483728
+# CHAT ID администратора
+ADMIN_CHAT_ID = "290993557"
 
 # Excel файл
 EXCEL_FILE = "orders.xlsx"
 
+# Flask
 app = Flask(__name__)
 
 # ==================================================
@@ -44,23 +47,33 @@ def create_excel():
 
         wb.save(EXCEL_FILE)
 
+        print("EXCEL CREATED")
+
 # ==================================================
 # СОХРАНЕНИЕ ЗАКАЗА
 # ==================================================
 
-def save_order(chat_id, name, order_text):
+def save_order(chat_id, user_name, order_text):
 
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb.active
+    try:
 
-    ws.append([
-        datetime.now().strftime("%d.%m.%Y %H:%M"),
-        str(chat_id),
-        name,
-        order_text
-    ])
+        wb = load_workbook(EXCEL_FILE)
+        ws = wb.active
 
-    wb.save(EXCEL_FILE)
+        ws.append([
+            datetime.now().strftime("%d.%m.%Y %H:%M"),
+            str(chat_id),
+            user_name,
+            order_text
+        ])
+
+        wb.save(EXCEL_FILE)
+
+        print("ORDER SAVED")
+
+    except Exception as e:
+
+        print("SAVE ORDER ERROR:", str(e))
 
 # ==================================================
 # ОТПРАВКА СООБЩЕНИЯ
@@ -70,8 +83,8 @@ def send_message(chat_id, text):
 
     try:
 
-        # защита от лимитов
-        time.sleep(1)
+        # антиспам
+        time.sleep(2)
 
         url = f"{API_URL}/messages"
 
@@ -85,7 +98,7 @@ def send_message(chat_id, text):
                 "chat_id": str(chat_id)
             },
             "body": {
-                "text": text
+                "text": str(text)
             }
         }
 
@@ -93,7 +106,7 @@ def send_message(chat_id, text):
             url,
             headers=headers,
             json=payload,
-            timeout=10
+            timeout=15
         )
 
         print("===================================")
@@ -102,6 +115,15 @@ def send_message(chat_id, text):
         print("STATUS:", response.status_code)
         print("RESPONSE:", response.text)
         print("===================================")
+
+        # если лимит
+        if response.status_code == 429:
+
+            print("LIMIT 429 -> WAIT 5 SEC")
+
+            time.sleep(5)
+
+        return response
 
     except Exception as e:
 
@@ -113,6 +135,7 @@ def send_message(chat_id, text):
 
 @app.route("/")
 def home():
+
     return "MAX BOT WORKING"
 
 # ==================================================
@@ -133,11 +156,21 @@ def webhook():
 
         # текст
         body = message.get("body", {})
-        text = body.get("text", "")
+        text = body.get("text", "").strip()
+
+        # если текст пустой
+        if not text:
+
+            return jsonify({
+                "status": "empty_message"
+            })
 
         # пользователь
         sender = message.get("sender", {})
-        user_name = sender.get("first_name", "Пользователь")
+        user_name = sender.get(
+            "first_name",
+            "Пользователь"
+        )
 
         # чат
         recipient = message.get("recipient", {})
@@ -148,11 +181,14 @@ def webhook():
 
         # если нет chat_id
         if not chat_id:
-            return jsonify({"status": "no_chat_id"})
 
-        # ==========================================
+            return jsonify({
+                "status": "no_chat_id"
+            })
+
+        # ==================================================
         # /start
-        # ==========================================
+        # ==================================================
 
         if text == "/start":
 
@@ -167,43 +203,58 @@ def webhook():
 /help — помощь
 /order — оформить заказ
 
-Пример:
+Пример заказа:
 
 /order Хочу заказать баннер
 """
 
             send_message(chat_id, answer)
 
-        # ==========================================
+        # ==================================================
         # /help
-        # ==========================================
+        # ==================================================
 
         elif text == "/help":
 
+            help_text = """
+📌 Команды:
+
+/start — запуск бота
+/help — помощь
+/order — оформить заказ
+
+Пример:
+
+/order Хочу заказать баннер
+"""
+
             send_message(
                 chat_id,
-                "Напишите:\n/order ваш заказ"
+                help_text
             )
 
-        # ==========================================
+        # ==================================================
         # /order
-        # ==========================================
+        # ==================================================
 
         elif text.startswith("/order"):
 
-            order_text = text.replace("/order", "").strip()
+            order_text = text.replace(
+                "/order",
+                ""
+            ).strip()
 
             # пустой заказ
             if order_text == "":
 
                 send_message(
                     chat_id,
-                    "Пример:\n/order Хочу заказать баннер"
+                    "❌ Введите текст заказа.\n\nПример:\n/order Хочу заказать баннер"
                 )
 
             else:
 
-                # сохраняем
+                # сохранить заказ
                 save_order(
                     chat_id,
                     user_name,
@@ -216,19 +267,18 @@ def webhook():
                     f"""
 ✅ Заказ принят!
 
-Ваш заказ:
+📦 Ваш заказ:
 
 {order_text}
 """
                 )
 
-                # уведомление админу
-                send_message(
-                    ADMIN_CHAT_ID,
-                    f"""
+                # сообщение админу
+                admin_message = f"""
 🆕 Новый заказ
 
-👤 Клиент: {user_name}
+👤 Клиент:
+{user_name}
 
 💬 Заказ:
 {order_text}
@@ -236,11 +286,15 @@ def webhook():
 🆔 Chat ID:
 {chat_id}
 """
+
+                send_message(
+                    ADMIN_CHAT_ID,
+                    admin_message
                 )
 
-        # ==========================================
+        # ==================================================
         # НЕИЗВЕСТНАЯ КОМАНДА
-        # ==========================================
+        # ==================================================
 
         else:
 
@@ -270,7 +324,9 @@ create_excel()
 
 if __name__ == "__main__":
 
+    port = int(os.environ.get("PORT", 10000))
+
     app.run(
         host="0.0.0.0",
-        port=10000
+        port=port
     )
