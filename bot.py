@@ -348,31 +348,3 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port
     )
-```
-
-# requirements.txt
-
-```txt
-flask
-requests
-openpyxl
-gunicorn
-```
-
-# Start Command для Render
-
-```txt
-gunicorn bot:app
-```
-
-# Основные исправления
-
-* Исправлен `401 No access token`
-* Исправлен `Unknown recipient`
-* Исправлен `orders.xlsx not found`
-* Исправлен `SyntaxError`
-* Добавлена защита от `429 Too many requests`
-* Добавлена автоматическая генерация Excel
-* Исправлена отправка сообщений в MAX
-* Исправлена работа webhook
-* Исправлен запуск Render
