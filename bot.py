@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 import requests
 import os
-import time
 from datetime import datetime
 from openpyxl import Workbook, load_workbook
 
@@ -23,7 +22,6 @@ app = Flask(__name__)
 # СОЗДАНИЕ EXCEL
 # =====================================================
 
-
 def create_excel():
     try:
         if not os.path.exists(EXCEL_FILE):
@@ -39,172 +37,87 @@ def create_excel():
             ])
 
             wb.save(EXCEL_FILE)
-            print("EXCEL CREATED")
-
+            print("✅ EXCEL CREATED")
     except Exception as e:
-        print("CREATE EXCEL ERROR:", e)
-
+        print("❌ CREATE EXCEL ERROR:", e)
 
 # =====================================================
-# СОХРАНЕНИЕ СООБЩЕНИЙ
+# СОХРАНЕНИЕ СООБЩЕНИЯ В EXCEL
 # =====================================================
 
-
-def save_message(user_id, name, text):
+def save_to_excel(user_id, name, text):
     try:
-        create_excel()
-
         wb = load_workbook(EXCEL_FILE)
         ws = wb.active
-
-        ws.append([
-            datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-            str(user_id),
-            str(name),
-            str(text)
-        ])
-
+        date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ws.append([date_str, user_id, name, text])
         wb.save(EXCEL_FILE)
-
-        print("MESSAGE SAVED")
-
     except Exception as e:
-        print("SAVE ERROR:", e)
-
+        print("❌ ERROR SAVING TO EXCEL:", e)
 
 # =====================================================
 # ОТПРАВКА СООБЩЕНИЯ
 # =====================================================
 
-
 def send_message(chat_id, text):
-
+    # Предполагается стандартная структура API для MAX, похожая на Telegram
+    # Если MAX использует другой эндпоинт, скорректируйте URL (например, /messages/sendText)
+    url = f"{API_URL}/bot{TOKEN}/sendMessage"
+    
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
+    
     try:
-
-        print("=" * 40)
-        print("SEND MESSAGE")
-        print("CHAT:", chat_id)
-
-        url = "https://botapi.max.ru/messages"
-
-        headers = {
-            "accept": "application/json",
-            "Content-Type": "application/json",
-            "Authorization": TOKEN
-        }
-
-        payload = {
-            "chat_id": int(chat_id),
-            "text": str(text)
-        }
-
-        response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
-
-        print("STATUS:", response.status_code)
-        print("RESPONSE:", response.text)
-        print("=" * 40)
-
-    except Exception as e:
-        print("SEND ERROR:", e)
-
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"❌ ERROR SENDING MESSAGE to {chat_id}:", e)
 
 # =====================================================
-# ГЛАВНАЯ
+# ОБРАБОТКА ВЕБХУКОВ
 # =====================================================
 
-
-@app.route("/")
-def home():
-    return "MAX BOT WORKING"
-
-
-# =====================================================
-# WEBHOOK
-# =====================================================
-
-
-@app.route("/webhook", methods=["POST"])
+@app.route("/", methods=["POST", "GET"])
 def webhook():
+    # Игнорируем GET-запросы (например, при проверке доступности сервера)
+    if request.method == "GET":
+        return "Бот работает!", 200
+
     try:
-
         data = request.json
+        if not data:
+            return jsonify({"status": "error", "message": "No JSON payload"}), 400
 
-        print("WEBHOOK DATA:", data)
-
-        # =============================================
-        # СОБЫТИЕ ЗАПУСКА БОТА
-        # =============================================
-
-        if data.get("update_type") == "bot_started":
-            print("BOT STARTED EVENT")
-            return jsonify({"status": "ok"})
-
+        # Парсинг данных (структура может немного отличаться в зависимости от API MAX)
+        # Здесь приведена стандартная структура Telegram-подобных API
         message = data.get("message", {})
+        chat = message.get("chat", {})
+        user = message.get("from", {})
+        
+        chat_id = chat.get("id")
+        text = message.get("text", "").strip()
+        user_id = user.get("id", "Unknown")
+        first_name = user.get("first_name", "User")
 
-        if not message:
-            return jsonify({"status": "no_message"})
+        if not chat_id or not text:
+            return jsonify({"status": "ok", "message": "Ignored"}), 200
 
-        body = message.get("body", {})
-        sender = message.get("sender", {})
-        recipient = message.get("recipient", {})
-
-        # USER ID
-        user_id = sender.get("user_id")
-
-        # CHAT ID
-        chat_id = recipient.get("chat_id")
-
-        # TEXT
-        text = body.get("text", "")
-
-        # NAME
-        first_name = sender.get("first_name", "")
-        last_name = sender.get("last_name", "")
-
-        user_name = f"{first_name} {last_name}".strip()
-
-        print("USER ID:", user_id)
-        print("CHAT ID:", chat_id)
-        print("TEXT:", text)
-
-        # сохраняем сообщение
-        if text:
-            save_message(user_id, user_name, text)
+        # Сохраняем каждый запрос в базу (Excel)
+        save_to_excel(user_id, first_name, text)
 
         # =============================================
-        # КОМАНДА START
+        # START
         # =============================================
-
         if text == "/start":
-
-            answer = f"""
-Здравствуйте, {user_name}! 👋
-
-Добро пожаловать в MAX BOT.
-
-Команды:
-
-/start — запуск
-/help — помощь
-/order — оформить заказ
-
-Пример:
-/order Хочу заказать футболку
-"""
-
+            answer = "Привет! Я бот.\nВведите /help для списка команд."
             send_message(chat_id, answer)
 
         # =============================================
         # HELP
         # =============================================
-
         elif text == "/help":
-
             answer = """
 Доступные команды:
 
@@ -215,15 +128,12 @@ def webhook():
 Пример:
 /order Хочу заказать баннер
 """
-
             send_message(chat_id, answer)
 
         # =============================================
         # ORDER
         # =============================================
-
         elif text.startswith("/order"):
-
             order_text = text.replace("/order", "").strip()
 
             if order_text == "":
@@ -231,7 +141,6 @@ def webhook():
                     chat_id,
                     "Пример:\n/order Хочу заказать футболку"
                 )
-
             else:
                 send_message(
                     chat_id,
@@ -241,9 +150,7 @@ def webhook():
         # =============================================
         # ОБЫЧНЫЕ СООБЩЕНИЯ
         # =============================================
-
         else:
-
             send_message(
                 chat_id,
                 f"Вы написали:\n\n{text}"
@@ -252,19 +159,15 @@ def webhook():
         return jsonify({"status": "ok"})
 
     except Exception as e:
-        print("WEBHOOK ERROR:", e)
-        return jsonify({"status": "error"})
-
+        print("❌ WEBHOOK ERROR:", e)
+        return jsonify({"status": "error"}), 500
 
 # =====================================================
 # ЗАПУСК
 # =====================================================
 
-
-create_excel()
-
 if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 10000))
-    )
+    create_excel()
+    # Запускаем Flask-сервер (по умолчанию порт 5000)
+    # Для production рекомендуется использовать Gunicorn или Waitress
+    app.run(host="0.0.0.0", port=5000, debug=False)
