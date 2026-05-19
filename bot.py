@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
 import os
+import time
 from openpyxl import Workbook, load_workbook
 from datetime import datetime
 
@@ -31,7 +32,7 @@ def create_excel():
 
         ws.append([
             "Дата",
-            "Chat ID",
+            "User ID",
             "Имя",
             "Заказ"
         ])
@@ -44,29 +45,31 @@ def create_excel():
 # СОХРАНЕНИЕ ЗАКАЗА
 # =========================================
 
-def save_order(chat_id, name, order_text):
+def save_order(user_id, name, order_text):
 
     wb = load_workbook(EXCEL_FILE)
     ws = wb.active
 
     ws.append([
         datetime.now().strftime("%d.%m.%Y %H:%M"),
-        chat_id,
+        user_id,
         name,
         order_text
     ])
 
     wb.save(EXCEL_FILE)
 
+    print("ORDER SAVED")
+
 # =========================================
 # ОТПРАВКА СООБЩЕНИЯ
 # =========================================
 
-def send_message(chat_id, text):
+def send_message(user_id, text):
 
     print("=================================")
     print("SEND MESSAGE")
-    print("CHAT:", chat_id)
+    print("USER:", user_id)
 
     url = f"{API_URL}/messages"
 
@@ -76,8 +79,12 @@ def send_message(chat_id, text):
     }
 
     payload = {
-        "chat_id": int(chat_id),
-        "text": text
+        "recipient": {
+            "user_id": int(user_id)
+        },
+        "message": {
+            "text": text
+        }
     }
 
     try:
@@ -86,16 +93,27 @@ def send_message(chat_id, text):
             url,
             headers=headers,
             json=payload,
-            timeout=10
+            timeout=15
         )
 
         print("STATUS:", response.status_code)
         print("RESPONSE:", response.text)
+
+        # =================================
+        # RATE LIMIT
+        # =================================
+
+        if response.status_code == 429:
+
+            print("RATE LIMIT - WAIT 2 SEC")
+
+            time.sleep(2)
+
         print("=================================")
 
     except Exception as e:
 
-        print("SEND ERROR:", e)
+        print("SEND ERROR:", str(e))
 
 # =========================================
 # ГЛАВНАЯ СТРАНИЦА
@@ -113,56 +131,68 @@ def home():
 @app.route("/webhook", methods=["POST"])
 def webhook():
 
-    data = request.json
+    try:
 
-    print("WEBHOOK DATA:", data)
+        data = request.json
 
-    # =====================================
-    # СЛУЖЕБНОЕ СОБЫТИЕ MAX
-    # =====================================
+        print("WEBHOOK DATA:", data)
 
-    if data.get("update_type") == "bot_started":
+        # =====================================
+        # BOT STARTED
+        # =====================================
 
-        print("BOT STARTED EVENT")
+        if data.get("update_type") == "bot_started":
 
-        return jsonify({
-            "status": "ok"
-        })
+            print("BOT STARTED EVENT")
 
-    # =====================================
-    # ПОЛУЧАЕМ MESSAGE
-    # =====================================
+            return jsonify({
+                "status": "ok"
+            })
 
-    message = data.get("message")
+        # =====================================
+        # MESSAGE
+        # =====================================
 
-    if not message:
+        message = data.get("message")
 
-        print("NO MESSAGE")
+        if not message:
 
-        return jsonify({
-            "status": "no_message"
-        })
+            print("NO MESSAGE")
 
-    body = message.get("body", {})
-    sender = message.get("sender", {})
-    recipient = message.get("recipient", {})
+            return jsonify({
+                "status": "no_message"
+            })
 
-    chat_id = recipient.get("chat_id")
+        body = message.get("body", {})
+        sender = message.get("sender", {})
 
-    text = body.get("text", "")
+        text = body.get("text", "").strip()
 
-    user_name = sender.get("first_name", "Пользователь")
+        user_id = sender.get("user_id")
 
-    print("CHAT ID:", chat_id)
-    print("TEXT:", text)
+        user_name = sender.get(
+            "first_name",
+            "Пользователь"
+        )
 
-    # =====================================
-    # /start
-    # =====================================
+        print("USER ID:", user_id)
+        print("TEXT:", text)
 
-    if text == "/start":
+        if not user_id:
 
-        answer = f"""
+            print("NO USER ID")
+
+            return jsonify({
+                "status": "no_user_id"
+            })
+
+        # =====================================
+        # /start
+        # =====================================
+
+        if text == "/start":
+
+            answer = f"""
 Здравствуйте, {user_name}! 👋
 
 Добро пожаловать в бот заказов.
@@ -174,22 +204,22 @@ def webhook():
 /order — оформить заказ
 
 Пример:
-    
+
 /order Хочу заказать баннер
 """
 
-        send_message(chat_id, answer)
+            send_message(user_id, answer)
 
-    # =====================================
-    # /help
-    # =====================================
+        # =====================================
+        # /help
+        # =====================================
 
-    elif text == "/help":
+        elif text == "/help":
 
-        send_message(
-            chat_id,
-            """
-Напишите команду:
+            send_message(
+                user_id,
+                """
+Напишите:
 
 /order ваш заказ
 
@@ -197,68 +227,79 @@ def webhook():
 
 /order Хочу заказать баннер
 """
-        )
+            )
 
-    # =====================================
-    # /order
-    # =====================================
+        # =====================================
+        # /order
+        # =====================================
 
-    elif text.startswith("/order"):
+        elif text.startswith("/order"):
 
-        order_text = text.replace("/order", "").strip()
+            order_text = text.replace(
+                "/order",
+                ""
+            ).strip()
 
-        # пустой заказ
-        if order_text == "":
+            # пустой заказ
+            if order_text == "":
 
-            send_message(
-                chat_id,
-                """
-Пример заказа:
+                send_message(
+                    user_id,
+                    """
+Пример:
 
 /order Хочу заказать баннер
 """
-            )
+                )
 
-        else:
+            else:
 
-            # сохраняем заказ
-            save_order(
-                chat_id,
-                user_name,
-                order_text
-            )
+                # сохраняем заказ
+                save_order(
+                    user_id,
+                    user_name,
+                    order_text
+                )
 
-            # ответ пользователю
-            send_message(
-                chat_id,
-                f"""
+                # сообщение пользователю
+                send_message(
+                    user_id,
+                    f"""
 ✅ Заказ принят!
 
 Ваш заказ:
 
 {order_text}
 """
-            )
+                )
 
-    # =====================================
-    # НЕИЗВЕСТНАЯ КОМАНДА
-    # =====================================
+        # =====================================
+        # НЕИЗВЕСТНАЯ КОМАНДА
+        # =====================================
 
-    else:
+        else:
 
-        send_message(
-            chat_id,
-            """
+            send_message(
+                user_id,
+                """
 Неизвестная команда.
 
-Напишите:
 /help
 """
-        )
+            )
 
-    return jsonify({
-        "status": "ok"
-    })
+        return jsonify({
+            "status": "ok"
+        })
+
+    except Exception as e:
+
+        print("WEBHOOK ERROR:", str(e))
+
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        })
 
 # =========================================
 # ЗАПУСК
@@ -268,7 +309,12 @@ if __name__ == "__main__":
 
     create_excel()
 
-    port = int(os.environ.get("PORT", 10000))
+    port = int(
+        os.environ.get(
+            "PORT",
+            10000
+        )
+    )
 
     app.run(
         host="0.0.0.0",
