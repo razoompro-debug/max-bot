@@ -84,21 +84,19 @@ def send_message(chat_id, text):
         print("SEND MESSAGE")
         print("CHAT:", chat_id)
 
-        # ПРАВИЛЬНЫЙ ENDPOINT
-        url = f"{API_URL}/message/send"
+        # ПРАВИЛЬНЫЙ URL
+        url = f"{API_URL}/messages"
 
         headers = {
             "Authorization": f"Bearer {TOKEN}",
             "Content-Type": "application/json"
         }
 
-        # ПРАВИЛЬНАЯ СТРУКТУРА PAYLOAD
         payload = {
             "chat_id": int(chat_id),
             "text": str(text)
         }
 
-        # защита от RATE LIMIT
         time.sleep(1)
 
         response = requests.post(
@@ -110,22 +108,6 @@ def send_message(chat_id, text):
 
         print("STATUS:", response.status_code)
         print("RESPONSE:", response.text)
-
-        # повтор при rate limit
-        if response.status_code == 429:
-            print("RATE LIMIT -> WAIT")
-            time.sleep(3)
-
-            response = requests.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-
-            print("RETRY STATUS:", response.status_code)
-            print("RETRY RESPONSE:", response.text)
-
         print("=" * 40)
 
     except Exception as e:
