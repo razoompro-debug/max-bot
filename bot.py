@@ -32,7 +32,7 @@ def create_excel():
 
         ws.append([
             "Дата",
-            "User ID",
+            "Chat ID",
             "Имя",
             "Заказ"
         ])
@@ -45,14 +45,14 @@ def create_excel():
 # СОХРАНЕНИЕ ЗАКАЗА
 # =========================================
 
-def save_order(user_id, name, order_text):
+def save_order(chat_id, name, order_text):
 
     wb = load_workbook(EXCEL_FILE)
     ws = wb.active
 
     ws.append([
         datetime.now().strftime("%d.%m.%Y %H:%M"),
-        user_id,
+        chat_id,
         name,
         order_text
     ])
@@ -65,26 +65,22 @@ def save_order(user_id, name, order_text):
 # ОТПРАВКА СООБЩЕНИЯ
 # =========================================
 
-def send_message(user_id, text):
+def send_message(chat_id, text):
 
     print("=================================")
     print("SEND MESSAGE")
-    print("USER:", user_id)
+    print("CHAT:", chat_id)
 
     url = f"{API_URL}/messages"
 
     headers = {
-        "Authorization": TOKEN,
+        "Authorization": f"Bearer {TOKEN}",
         "Content-Type": "application/json"
     }
 
     payload = {
-        "recipient": {
-            "user_id": int(user_id)
-        },
-        "message": {
-            "text": text
-        }
+        "chat_id": int(chat_id),
+        "text": text
     }
 
     try:
@@ -99,13 +95,10 @@ def send_message(user_id, text):
         print("STATUS:", response.status_code)
         print("RESPONSE:", response.text)
 
-        # =================================
         # RATE LIMIT
-        # =================================
-
         if response.status_code == 429:
 
-            print("RATE LIMIT - WAIT 2 SEC")
+            print("RATE LIMIT -> WAIT")
 
             time.sleep(2)
 
@@ -165,25 +158,26 @@ def webhook():
 
         body = message.get("body", {})
         sender = message.get("sender", {})
+        recipient = message.get("recipient", {})
 
         text = body.get("text", "").strip()
 
-        user_id = sender.get("user_id")
+        chat_id = recipient.get("chat_id")
 
         user_name = sender.get(
             "first_name",
             "Пользователь"
         )
 
-        print("USER ID:", user_id)
+        print("CHAT ID:", chat_id)
         print("TEXT:", text)
 
-        if not user_id:
+        if not chat_id:
 
-            print("NO USER ID")
+            print("NO CHAT ID")
 
             return jsonify({
-                "status": "no_user_id"
+                "status": "no_chat_id"
             })
 
         # =====================================
@@ -208,7 +202,7 @@ def webhook():
 /order Хочу заказать баннер
 """
 
-            send_message(user_id, answer)
+            send_message(chat_id, answer)
 
         # =====================================
         # /help
@@ -217,7 +211,7 @@ def webhook():
         elif text == "/help":
 
             send_message(
-                user_id,
+                chat_id,
                 """
 Напишите:
 
@@ -244,7 +238,7 @@ def webhook():
             if order_text == "":
 
                 send_message(
-                    user_id,
+                    chat_id,
                     """
 Пример:
 
@@ -256,14 +250,14 @@ def webhook():
 
                 # сохраняем заказ
                 save_order(
-                    user_id,
+                    chat_id,
                     user_name,
                     order_text
                 )
 
                 # сообщение пользователю
                 send_message(
-                    user_id,
+                    chat_id,
                     f"""
 ✅ Заказ принят!
 
@@ -274,15 +268,17 @@ def webhook():
                 )
 
         # =====================================
-        # НЕИЗВЕСТНАЯ КОМАНДА
+        # ОБЫЧНОЕ СООБЩЕНИЕ
         # =====================================
 
         else:
 
             send_message(
-                user_id,
+                chat_id,
                 """
-Неизвестная команда.
+Я вас понял 👍
+
+Напишите:
 
 /help
 """
@@ -320,3 +316,4 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port
     )
+
