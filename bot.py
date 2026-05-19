@@ -62,7 +62,11 @@ def save_order(chat_id, name, order_text):
 # ОТПРАВКА СООБЩЕНИЯ В MAX
 # ==================================================
 
+import time
+
 def send_message(chat_id, text):
+
+    time.sleep(1)
 
     url = f"{API_URL}/messages"
 
@@ -71,7 +75,6 @@ def send_message(chat_id, text):
         "Content-Type": "application/json"
     }
 
-    # В MAX нужен recipient
     payload = {
         "recipient": {
             "chat_id": int(chat_id)
@@ -81,19 +84,17 @@ def send_message(chat_id, text):
         }
     }
 
-    try:
+    response = requests.post(
+        url,
+        headers=headers,
+        json=payload
+    )
 
-        response = requests.post(
-            url,
-            headers=headers,
-            json=payload
-        )
-
-        print("===================================")
-        print("SEND MESSAGE")
-        print("STATUS:", response.status_code)
-        print("RESPONSE:", response.text)
-        print("===================================")
+    print("===================================")
+    print("SEND MESSAGE")
+    print("STATUS:", response.status_code)
+    print("RESPONSE:", response.text)
+    print("===================================")
 
     except Exception as e:
 
