@@ -1,173 +1,181 @@
-from flask import Flask, request, jsonify
-import requests
-import os
-from datetime import datetime
-from openpyxl import Workbook, load_workbook
-
-# =====================================================
-# НАСТРОЙКИ
-# =====================================================
+from maxapi import Bot
+from collections import defaultdict
 
 TOKEN = "f9LHodD0cOIloCdM4S4u2QEo0hF1yDOLdVH23RWt5jZwWyIWM82UMhtRYvdd5vPJJ4jYfNEjdPrbnSAV4siW"
 
-# ПРАВИЛЬНЫЙ API
-API_URL = "https://botapi.max.ru"
+bot = Bot(TOKEN)
 
-# Excel файл
-EXCEL_FILE = "orders.xlsx"
+# Хранилище данных пользователей
+users = defaultdict(dict)
 
-app = Flask(__name__)
+# Возможные размеры
+SIZES = ["S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL", "6XL"]
 
-# =====================================================
-# СОЗДАНИЕ EXCEL
-# =====================================================
+# Цвета футболок
+TSHIRT_COLORS = [
+    "Белая",
+    "Черная",
+    "Красная",
+    "Синяя",
+    "Зеленая"
+]
 
-def create_excel():
-    try:
-        if not os.path.exists(EXCEL_FILE):
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "Orders"
+# Цвета надписей
+TEXT_COLORS = [
+    "Черный",
+    "Белый",
+    "Красный",
+    "Синий",
+    "Золотой"
+]
 
-            ws.append([
-                "Дата",
-                "User ID",
-                "Имя",
-                "Сообщение"
-            ])
 
-            wb.save(EXCEL_FILE)
-            print("✅ EXCEL CREATED")
-    except Exception as e:
-        print("❌ CREATE EXCEL ERROR:", e)
+@bot.message_handler(commands=["start"])
+def start(message):
+    user_id = message.chat.id
 
-# =====================================================
-# СОХРАНЕНИЕ СООБЩЕНИЯ В EXCEL
-# =====================================================
-
-def save_to_excel(user_id, name, text):
-    try:
-        wb = load_workbook(EXCEL_FILE)
-        ws = wb.active
-        date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ws.append([date_str, user_id, name, text])
-        wb.save(EXCEL_FILE)
-    except Exception as e:
-        print("❌ ERROR SAVING TO EXCEL:", e)
-
-# =====================================================
-# ОТПРАВКА СООБЩЕНИЯ
-# =====================================================
-
-def send_message(chat_id, text):
-    # Предполагается стандартная структура API для MAX, похожая на Telegram
-    # Если MAX использует другой эндпоинт, скорректируйте URL (например, /messages/sendText)
-    url = f"{API_URL}/bot{TOKEN}/sendMessage"
-    
-    payload = {
-        "chat_id": chat_id,
-        "text": text
+    users[user_id] = {
+        "step": "gender"
     }
-    
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        print(f"❌ ERROR SENDING MESSAGE to {chat_id}:", e)
 
-# =====================================================
-# ОБРАБОТКА ВЕБХУКОВ
-# =====================================================
+    bot.send_message(
+        user_id,
+        "👕 Добро пожаловать в бот заказа именных футболок!\n\n"
+        "Выберите тип футболки:\n"
+        "1. Мужская\n"
+        "2. Женская"
+    )
 
-@app.route("/", methods=["POST", "GET"])
-def webhook():
-    # Игнорируем GET-запросы (например, при проверке доступности сервера)
-    if request.method == "GET":
-        return "Бот работает!", 200
 
-    try:
-        data = request.json
-        if not data:
-            return jsonify({"status": "error", "message": "No JSON payload"}), 400
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    user_id = message.chat.id
+    text = message.text
 
-        # Парсинг данных (структура может немного отличаться в зависимости от API MAX)
-        # Здесь приведена стандартная структура Telegram-подобных API
-        message = data.get("message", {})
-        chat = message.get("chat", {})
-        user = message.get("from", {})
-        
-        chat_id = chat.get("id")
-        text = message.get("text", "").strip()
-        user_id = user.get("id", "Unknown")
-        first_name = user.get("first_name", "User")
+    if user_id not in users:
+        users[user_id]["step"] = "gender"
 
-        if not chat_id or not text:
-            return jsonify({"status": "ok", "message": "Ignored"}), 200
+    step = users[user_id].get("step")
 
-        # Сохраняем каждый запрос в базу (Excel)
-        save_to_excel(user_id, first_name, text)
-
-        # =============================================
-        # START
-        # =============================================
-        if text == "/start":
-            answer = "Привет! Я бот.\nВведите /help для списка команд."
-            send_message(chat_id, answer)
-
-        # =============================================
-        # HELP
-        # =============================================
-        elif text == "/help":
-            answer = """
-Доступные команды:
-
-/start — запуск
-/help — помощь
-/order — сделать заказ
-
-Пример:
-/order Хочу заказать баннер
-"""
-            send_message(chat_id, answer)
-
-        # =============================================
-        # ORDER
-        # =============================================
-        elif text.startswith("/order"):
-            order_text = text.replace("/order", "").strip()
-
-            if order_text == "":
-                send_message(
-                    chat_id,
-                    "Пример:\n/order Хочу заказать футболку"
-                )
-            else:
-                send_message(
-                    chat_id,
-                    f"✅ Ваш заказ принят:\n\n{order_text}"
-                )
-
-        # =============================================
-        # ОБЫЧНЫЕ СООБЩЕНИЯ
-        # =============================================
+    # 1. Мужская / Женская
+    if step == "gender":
+        if text.lower() in ["мужская", "1"]:
+            users[user_id]["gender"] = "Мужская"
+        elif text.lower() in ["женская", "2"]:
+            users[user_id]["gender"] = "Женская"
         else:
-            send_message(
-                chat_id,
-                f"Вы написали:\n\n{text}"
+            bot.send_message(user_id, "Введите: Мужская или Женская")
+            return
+
+        users[user_id]["step"] = "size"
+
+        bot.send_message(
+            user_id,
+            "📏 Выберите размер:\n" + ", ".join(SIZES)
+        )
+
+    # 2. Размер
+    elif step == "size":
+        if text.upper() not in SIZES:
+            bot.send_message(
+                user_id,
+                "❌ Неверный размер.\nВведите один из:\n" + ", ".join(SIZES)
             )
+            return
 
-        return jsonify({"status": "ok"})
+        users[user_id]["size"] = text.upper()
+        users[user_id]["step"] = "tshirt_color"
 
-    except Exception as e:
-        print("❌ WEBHOOK ERROR:", e)
-        return jsonify({"status": "error"}), 500
+        bot.send_message(
+            user_id,
+            "🎨 Выберите цвет футболки:\n" +
+            "\n".join(TSHIRT_COLORS)
+        )
 
-# =====================================================
-# ЗАПУСК
-# =====================================================
+    # 3. Цвет футболки
+    elif step == "tshirt_color":
+        users[user_id]["tshirt_color"] = text
+        users[user_id]["step"] = "print_text"
 
-if __name__ == "__main__":
-    create_excel()
-    # Запускаем Flask-сервер (по умолчанию порт 5000)
-    # Для production рекомендуется использовать Gunicorn или Waitress
-    app.run(host="0.0.0.0", port=5000, debug=False)
+        bot.send_message(
+            user_id,
+            "✍️ Отправьте надпись для футболки.\n"
+            "Если хотите использовать фото надписи — отправьте изображение."
+        )
+
+    # 4. Надпись или фото
+    elif step == "print_text":
+
+        # Проверяем текст
+        if text:
+            users[user_id]["print"] = text
+            users[user_id]["print_type"] = "Текст"
+
+        users[user_id]["step"] = "text_color"
+
+        bot.send_message(
+            user_id,
+            "🌈 Выберите цвет надписи:\n" +
+            "\n".join(TEXT_COLORS)
+        )
+
+    # 5. Цвет надписи
+    elif step == "text_color":
+        users[user_id]["text_color"] = text
+        users[user_id]["step"] = "client_info"
+
+        bot.send_message(
+            user_id,
+            "📋 Введите данные в формате:\n\n"
+            "ФИО\n"
+            "Телефон\n"
+            "Адрес доставки"
+        )
+
+    # 6. Контакты клиента
+    elif step == "client_info":
+        users[user_id]["client_info"] = text
+
+        order = users[user_id]
+
+        result = f"""
+✅ НОВЫЙ ЗАКАЗ
+
+👕 Тип футболки: {order.get('gender')}
+📏 Размер: {order.get('size')}
+🎨 Цвет футболки: {order.get('tshirt_color')}
+
+✍️ Надпись:
+{order.get('print')}
+
+🌈 Цвет надписи:
+{order.get('text_color')}
+
+📋 Данные клиента:
+{order.get('client_info')}
+"""
+
+        bot.send_message(
+            user_id,
+            result
+        )
+
+        # Здесь можно отправлять заказ администратору
+        ADMIN_ID = "10878339"
+
+        bot.send_message(
+            ADMIN_ID,
+            "📦 Новый заказ!\n" + result
+        )
+
+        users[user_id]["step"] = "done"
+
+        bot.send_message(
+            user_id,
+            "🙏 Спасибо за заказ!\n"
+            "С вами скоро свяжется менеджер."
+        )
+
+
+print("Бот запущен...")
+bot.infinity_polling()
