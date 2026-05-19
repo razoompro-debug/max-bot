@@ -78,26 +78,25 @@ def save_message(user_id, name, text):
 
 
 def send_message(chat_id, text):
+
     try:
 
         print("=" * 40)
         print("SEND MESSAGE")
         print("CHAT:", chat_id)
 
-        # ПРАВИЛЬНЫЙ URL
-        url = f"{API_URL}/messages"
+        url = "https://botapi.max.ru/messages"
 
         headers = {
-            "Authorization": f"Bearer {TOKEN}",
-            "Content-Type": "application/json"
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": TOKEN
         }
 
         payload = {
             "chat_id": int(chat_id),
             "text": str(text)
         }
-
-        time.sleep(1)
 
         response = requests.post(
             url,
